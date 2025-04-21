@@ -2,51 +2,71 @@
 """
 trace_parser.py
 
-Reads the flux & rate data from the Meep + modulation stage,
-produces a time-based or distance-based CSV for NS-3.
+Reads your modulation output (SNR ↔ BER) and writes a PER‐vs‐SNR table for NS‑3.
 
 Usage:
-    python trace_parser.py --meep_data ../meep/data --output channel_trace.csv
+    cd ns3
+    python3 trace_parser.py \
+      --modulation_csv ../modulation/rate_vs_distance.csv \
+      --output per_snr_table.csv \
+      --packet_sizes 128,256,512
 """
 
 import argparse
 import pandas as pd
-import glob
-import re
 import numpy as np
+import os
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--meep_data", type=str, default="../meep/data",
-                        help="Directory containing Meep output CSV files.")
-    parser.add_argument("--output", type=str, default="channel_trace.csv",
-                        help="Output CSV for NS-3.")
-    args = parser.parse_args()
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--modulation_csv", type=str,
+        default="rate_vs_distance.csv",
+        help="Path to modulation/rate_vs_distance_*.csv"
+    )
+    p.add_argument(
+        "--output", type=str, default="per_snr_table.csv",
+        help="Output PER vs SNR table for NS‑3"
+    )
+    p.add_argument(
+        "--packet_sizes", type=str, default="128,256,512",
+        help="Comma‑separated list of packet sizes (bytes) to compute PER for"
+    )
+    args = p.parse_args()
 
-    # Example: gather (distance, rate_Mbps) from the modulation results
-    # We assume we have a single file with aggregated rates, or we'd parse individually.
-    # Here is a placeholder approach:
-    data = {
-        "time_s": [],
-        "node_i": [],
-        "node_j": [],
-        "errorRate": []
-    }
+    # parse packet sizes
+    pkt_sizes = [int(x) for x in args.packet_sizes.split(",")]
 
-    # Suppose we set a simple model: errorRate ~ 1 / (rate_Mbps + 1)
-    # We'll just produce some dummy lines:
-    for t in np.linspace(0, 10, 11):
-        for i in range(3):
-            for j in range(3, 6):
-                error_rate = 0.01 * (j - i)
-                data["time_s"].append(t)
-                data["node_i"].append(i)
-                data["node_j"].append(j)
-                data["errorRate"].append(error_rate)
+    # load your modulation output
+    df = pd.read_csv(args.modulation_csv)
 
-    df = pd.DataFrame(data)
-    df.to_csv(args.output, index=False)
-    print(f"Saved trace to {args.output}")
+    # ensure we have the columns we need
+    if "SNR_dB" not in df.columns or "BER" not in df.columns:
+        raise RuntimeError(f"{args.modulation_csv} must contain 'SNR_dB' and 'BER' columns")
+
+    # build the PER‐vs‐SNR table
+    snr_bins = np.sort(df["SNR_dB"].unique())
+    out = {"SNR_dB": snr_bins}
+
+    for ps in pkt_sizes:
+        per_list = []
+        for snr in snr_bins:
+            # average BER at this SNR bin (if you have multiple distances/schemes)
+            ber_vals = df.loc[df["SNR_dB"] == snr, "BER"].values
+            if len(ber_vals) == 0:
+                mean_ber = 1.0
+            else:
+                mean_ber = np.mean(ber_vals)
+            # PER for this packet size
+            per = 1.0 - (1.0 - mean_ber) ** (ps * 8)
+            per_list.append(per)
+        out[f"PER_{ps}B"] = per_list
+
+    df_out = pd.DataFrame(out)
+
+    # write it
+    df_out.to_csv(args.output, index=False)
+    print(f"→ Wrote PER vs SNR table to {args.output}")
 
 if __name__ == "__main__":
     main()

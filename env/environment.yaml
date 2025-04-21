@@ -8,8 +8,8 @@ dependencies:
   - pandas=1.4
   - h5py=3.7
   - mpi4py=3.1
-  - pymeep=1.25                            # Conda‑Forge package for Meep
-  - pymeep-extras                         # optional MPI / HDF5 bindings
+  - pymeep=1.25          # Python bindings for Meep
+  - pymeep-extras       # MPI/HDF5 support
   - pip                                    # so we can pip-install PyFoam
   - pip:
       - PyFoam                    # install PyFoam from PyPI
