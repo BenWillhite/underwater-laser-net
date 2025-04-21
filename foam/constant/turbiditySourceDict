@@ -1,0 +1,11 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      turbiditySourceDict;
+}
+
+q Su [0 0 0 0 0 0 0] 1e-2;
+zoneName  seabedZone;

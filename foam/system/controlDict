@@ -1,0 +1,38 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| system/controlDict                                                        |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+
+application       pimpleFoam;    // we stay with the stock solver
+
+startFrom         startTime;
+startTime         0;
+
+stopAt            endTime;
+endTime           10;             // run 1 s – extend later
+
+deltaT            0.001;
+maxCo             0.5;
+adjustableRunTime yes;
+
+writeControl      timeStep;
+writeInterval     100;           // every 0.1 s
+purgeWrite        0;
+
+writeFormat       ascii;
+writePrecision    6;
+
+runTimeModifiable true;
+
+/* no functions{} : turbidity handled by fvOptions */
+
+DebugSwitches
+{
+    momentumTransport 1;
+}

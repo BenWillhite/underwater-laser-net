@@ -1,0 +1,15 @@
+name: underwater_laser_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9                             # Meep & PyFoam need ≲3.10
+  - numpy=1.23
+  - matplotlib=3.6
+  - pandas=1.4
+  - h5py=3.7
+  - mpi4py=3.1
+  - pymeep=1.25                            # Conda‑Forge package for Meep
+  - pymeep-extras                         # optional MPI / HDF5 bindings
+  - pip                                    # so we can pip-install PyFoam
+  - pip:
+      - PyFoam                    # install PyFoam from PyPI

@@ -1,0 +1,29 @@
+/* constant/fvOptions – **only** the seabed source */
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      fvOptions;
+}
+
+/*--------- 2. seabed source ----------------------------------------------*/
+plumeSource
+{
+    type          semiImplicitSource;
+    active        yes;
+    selectionMode cellZone;
+    cellZone      seabedZone;
+    volumeMode    specific;
+
+    sources
+    {
+        turbidity
+        {
+            explicit 1e-2;
+            implicit 0;
+        }
+    }
+}
+

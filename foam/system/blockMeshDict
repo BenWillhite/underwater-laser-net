@@ -1,0 +1,82 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 | OpenFOAM 10                                    |
+\*---------------------------------------------------------------------------*/
+
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+    location    "system";
+}
+
+convertToMeters 1;
+
+///////////////////////////////////////////////////////////////////////////
+// 100 m (x)  ×  100 m (y)  ×  10 m (z)
+//   – X × Y is the horizontal seabed plane
+//   – Z = 10 m is the shallow water column
+///////////////////////////////////////////////////////////////////////////
+
+vertices
+(
+    (  0   0   0 )   // 0
+    (100   0   0 )   // 1
+    (100 100   0 )   // 2
+    (  0 100   0 )   // 3
+
+    (  0   0  10 )   // 4
+    (100   0  10 )   // 5
+    (100 100  10 )   // 6
+    (  0 100  10 )   // 7
+);
+
+blocks
+(
+    // 20 × 20 × 5  →  5 m × 5 m × 2 m cells
+    hex (0 1 2 3 4 5 6 7) (20 20 5) simpleGrading (1 1 1)
+);
+
+edges ();
+
+boundary
+(
+    inlet      //  x = 0
+    {
+        type patch;
+        faces ( (0 4 7 3) );
+    }
+
+    outlet     //  x = 100
+    {
+        type patch;
+        faces ( (1 2 6 5) );
+    }
+
+    seabed     //  z = 0
+    {
+        type wall;
+        faces ( (0 1 2 3) );
+    }
+
+    top        //  z = 10
+    {
+        type patch;
+        faces ( (4 5 6 7) );
+    }
+
+    side1      //  y = 0
+    {
+        type wall;
+        faces ( (0 4 5 1) );
+    }
+
+    side2      //  y = 100
+    {
+        type wall;
+        faces ( (3 2 6 7) );
+    }
+);
+
+mergePatchPairs ();

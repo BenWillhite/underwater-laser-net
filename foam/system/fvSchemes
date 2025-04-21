@@ -1,0 +1,63 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvSchemes;
+}
+
+ddtSchemes
+{
+    default         backward;    // second-order time
+}
+
+gradSchemes
+{
+    default         Gauss linear;
+}
+
+divSchemes
+{
+    default         none;
+
+    // LES velocity
+    div(phi,U)      Gauss limitedLinearV 1;
+
+    // sub-grid scale k, or RANS k/omega
+    div(phi,k)      Gauss limitedLinear 1;
+    div(phi,omega)  Gauss limitedLinear 1;
+
+    // effective viscous term
+    div((nuEff*dev2(T(grad(U))))) Gauss linear;
+
+    // **added** scalar transport for turbidity
+    div(phi,turbidity) Gauss upwind;
+}
+
+laplacianSchemes
+{
+    default         Gauss linear corrected;
+
+    // enable diffusive term for turbidity using the user coefficient
+    laplacian(turbidityDiffusivity,turbidity) Gauss linear corrected;
+}
+
+interpolationSchemes
+{
+    default         linear;
+}
+
+snGradSchemes
+{
+    default         corrected;
+}
+
+wallDist
+{
+    method meshWave;
+}
+
+wallDistSchemes
+{
+    default         corrected;
+}

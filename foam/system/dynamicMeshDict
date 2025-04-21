@@ -1,0 +1,30 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      dynamicMeshDict;
+    location    "system";
+}
+
+motionSolver solidBody;
+
+solidBodyCoeffs
+{
+    // must match the patch name created by snappy: submarineWall
+    patches (submarine);
+
+    velocity (0 1 0); // 1 m/s in +y
+    omega    (0 0 0); // no rotation
+}
+
+// No mesh layering or topological changes:
+topoChanger none;
+
+// Optional load balancing if running in parallel
+distributor
+{
+    type                  decomposer;
+    redistributionInterval 10;
+    maxImbalance          0.1;
+}

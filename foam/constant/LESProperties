@@ -1,0 +1,23 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      LESProperties;
+}
+
+simulationType  LES;
+
+LES
+{
+    LESModel        oneEqEddy;   // or WALE, dynSmagorinsky, etc.
+    delta           cubeRootVol;
+    printCoeffs     on;
+
+    oneEqEddyCoeffs
+    {
+        ce    1.05;
+        kappa 0.41;
+    }
+}

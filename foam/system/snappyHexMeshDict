@@ -1,0 +1,84 @@
+/* snappyHexMeshDict – OpenFOAM‑10 */
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      snappyHexMeshDict;
+    location    "system";
+}
+
+castellatedMesh true;
+snap            true;
+addLayers       false;
+
+mergeTolerance 1e-6;
+
+geometry
+{
+    submarine
+    {
+        type        triSurfaceMesh;
+        file        "submarine.stl";
+
+        patchInfo
+        {
+            type wall;
+            inGroups (submarineGroup);
+        }
+    }
+
+    wakeBox                            // refine 20 m ahead/behind hull
+    {
+        type        searchableBox;
+        min         ( 30  40 0);
+        max         ( 70  60 10);
+    }
+}
+
+castellatedMeshControls
+{
+    maxLocalCells      5000000;
+    maxGlobalCells     10000000;
+
+    minRefinementCells 0;
+    maxLoadUnbalance   0.10;
+
+    /* —— point guaranteed to lie in the fluid —— */
+    locationInMesh (50 50 5);          // ← middle of the tank
+
+    features ();
+
+    refinementSurfaces
+    {
+        submarine { level (2 3); }
+    }
+
+    refinementRegions
+    {
+        wakeBox  { mode inside; levels ((1e15 2)); }
+    }
+
+    resolveFeatureAngle   30;
+    nCellsBetweenLevels   3;
+    allowFreeStandingZoneFaces false;
+}
+
+snapControls
+{
+    nSmoothPatch 3;
+    tolerance    2;
+    nSolveIter   30;
+    nRelaxIter   5;
+}
+
+addLayersControls
+{
+    relativeSizes        true;
+    layers               {};
+}
+
+meshQualityControls
+{
+    #include "meshQualityDict"
+}

@@ -1,0 +1,58 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| system/topoSetDict – build seabedZone from the seabed wall patch          |
+\*---------------------------------------------------------------------------*/
+
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      topoSetDict;
+}
+
+actions
+(
+    //----------------------------------------------------------------------
+    // 1. collect all boundary faces that belong to patch ‘seabed’
+    //----------------------------------------------------------------------
+    {
+        name        seabedFaces;
+        type        faceSet;
+        action      new;
+        source      patchToFace;
+        sourceInfo
+        {
+            patch   seabed;
+        }
+    }
+
+    //----------------------------------------------------------------------
+    // 2. convert those faces to their *owner* cells  (works for a wall)
+    //----------------------------------------------------------------------
+    {
+        name        seabedCells;
+        type        cellSet;
+        action      new;
+        source      faceToCell;
+        sourceInfo
+        {
+            set     seabedFaces;
+            option  owner;        // <‑‑ CHANGED (owner instead of all)
+        }
+    }
+
+    //----------------------------------------------------------------------
+    // 3. turn the cellSet into a cellZone for fvOptions
+    //----------------------------------------------------------------------
+    {
+        name        seabedZone;
+        type        cellZoneSet;
+        action      new;
+        source      setToCellZone;
+        sourceInfo
+        {
+            set     seabedCells;
+        }
+    }
+);
