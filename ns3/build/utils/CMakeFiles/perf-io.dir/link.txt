@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names "CMakeFiles/perf-io.dir/perf/perf-io.cc.o" -o perf/ns3-dev-perf-io   -L/Users/ben/ns-3/build/lib  -Wl,-rpath,/Users/ben/ns-3/build/lib ../lib/libns3-dev-core.dylib /opt/homebrew/Cellar/gsl/2.8/lib/libgsl.dylib /opt/homebrew/Cellar/gsl/2.8/lib/libgslcblas.dylib
