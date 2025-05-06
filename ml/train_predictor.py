@@ -1,16 +1,10 @@
-
-"""
-Train a regression model to forecast future flux curves
-from past absorption coefficients and link parameters.
-"""
-
 import os
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 import joblib
 
 # Parameters
-TRAIN_CSV    = "data/training.csv"
+TRAIN_CSV    = "training.csv"
 MODEL_DIR    = "models"
 MODEL_PATH   = os.path.join(MODEL_DIR, "flux_predictor.joblib")
 
@@ -38,4 +32,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
