@@ -1,19 +1,3 @@
-
-"""
-predict_flux.py
-
-Lightweight CLI to forecast the next Meep-style flux curve
-using a trained ML model.
-
-Usage:
-  python predict_flux.py \
-    --alpha_csv foam/2_post/alpha_depth_time.csv \
-    --distance 2.0 \
-    --lambda_nm 532 \
-    --out_csv meep/data/flux_vs_time_predicted_d2.0_l532.csv \
-    [--time_horizon 1.5]
-"""
-
 import argparse
 import pandas as pd
 import numpy as np
@@ -43,8 +27,8 @@ def main():
     # Load and preprocess alpha
     df_alpha = pd.read_csv(args.alpha_csv)
     # average over depth for each time, then sort by time
-    alpha_time = df_alpha.groupby("time")["alpha"].mean().reset_index()
-    alpha_series = alpha_time.sort_values("time")["alpha"].values
+    alpha_time = df_alpha.groupby("time")["alpha_m-1"].mean().reset_index()
+    alpha_series = alpha_time.sort_values("time")["alpha_m-1"].values
 
     if len(alpha_series) < T:
         raise RuntimeError(f"Need at least {T} alpha samples, but got {len(alpha_series)}")
