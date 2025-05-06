@@ -1,11 +1,5 @@
-#prepare_training_data.py
-"""
-prepare_training_data.py
-
-Gathers Meep flux‐vs‐time CSVs and the recent alpha window
-into one wide training table: 
-   [α_0 … α_{T-1}, λ, d, flux_0 … flux_{M-1}]
-"""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import glob
 import re
@@ -13,24 +7,24 @@ import pandas as pd
 
 # --- CONFIGURATION ---
 # Number of past α samples to use
-T = 50  
+T = 50
 # Number of future flux samples per example
-M = 100  
+M = 100
 
 # Paths
-ALPHA_CSV = "foam/2_post/alpha_depth_time.csv"
-MEEP_PATTERN = "meep/data/flux_vs_time_λ*_d*_t*.csv"
-OUTPUT_CSV = "data/training.csv"
+ALPHA_CSV = "../foam/2_post/alpha_depth_time.csv"
+MEEP_PATTERN = "../meep/data/flux_vs_time_λ*_d*_t*.csv"
+OUTPUT_CSV = "training.csv"
 
 
 def load_alpha_window(alpha_csv, window_size):
     # Read α CSV and average over depth for each time step
     df = pd.read_csv(alpha_csv)
     # Assumes columns: time, depth, alpha
-    alpha_time = df.groupby("time")["alpha"].mean().reset_index()
+    alpha_time = df.groupby("time")["alpha_m-1"].mean().reset_index()
     # Take the last `window_size` entries
     recent = alpha_time.tail(window_size)
-    return recent["alpha"].values  # shape (T,)
+    return recent["alpha_m-1"].values  # shape (T,)
 
 
 def parse_meep_filename(path):
@@ -49,17 +43,20 @@ def main():
     for csv_path in glob.glob(MEEP_PATTERN):
         lam, dist = parse_meep_filename(csv_path)
         df = pd.read_csv(csv_path)
-        flux = df["scaled_flux"].values  # shape (M,)
 
-        # Build one row: α_0…α_{T-1}, λ, d, flux_0…flux_{M-1}
+        # --- automatically find the flux column (anything but "time") ---
+        flux_cols = [c for c in df.columns if c.lower() != "time"]
+        if len(flux_cols) != 1:
+            raise RuntimeError(
+                f"Expected 1 flux column in {csv_path}, found {flux_cols}")
+        flux = df[flux_cols[0]].values  # now picks up your actual header name
+
+        # Build one row with alpha features, link params, then flux labels
         row = {}
-        # past α features
         for i, a in enumerate(alpha_window):
             row[f"alpha_{i}"] = a
-        # link parameters
         row["lambda_nm"] = lam
         row["distance_m"] = dist
-        # future flux labels
         for j, f in enumerate(flux[:M]):
             row[f"flux_{j}"] = f
 
