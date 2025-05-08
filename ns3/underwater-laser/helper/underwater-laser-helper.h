@@ -42,7 +42,13 @@ public:
    * \brief Install devices on a set of nodes.
    */
   NetDeviceContainer Install (NodeContainer c);
-
+    /** 
+    * \brief (New) Install exactly two NetDevices (one on each node) with a fresh channel.
+     *        Each call returns a NetDeviceContainer of size 2, so you can assign /30 IPs.
+     */
+    NetDeviceContainer InstallPair (Ptr<Node> nA, Ptr<Node> nB);
+  
+  
   /**
    * \brief Provide a RateTable CSV path to all devices
    */
@@ -53,10 +59,12 @@ private:
   UnderwaterLaserChannelHelper  m_channelHelper;
   UnderwaterLaserPhyHelper      m_phyHelper;
   UnderwaterLaserMacHelper      m_macHelper;
+  
 
   // channel + rate table shared by all devices
   Ptr<UnderwaterLaserChannel>   m_channel;
   Ptr<UnderwaterLaserRateTable> m_rateTable;
+  Ptr<UnderwaterLaserErrorRateModel> m_errorModel;
 
   bool                          m_channelCreated;
   std::string                   m_rateTableCsv;
@@ -64,6 +72,12 @@ private:
   // --- NEW: user-configurable propagation-loss parameters ---
   std::string                   m_alphaCsv;
   double                        m_divergenceRad;
+
+  bool DeviceReceiveCallback(
+    Ptr<NetDevice> device, 
+    Ptr<const Packet> packet, 
+    uint16_t protocol, 
+    const Address &source);
 };
 
 } // namespace ns3

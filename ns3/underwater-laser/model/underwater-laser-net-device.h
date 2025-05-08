@@ -1,3 +1,5 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+
 #ifndef UNDERWATER_LASER_NET_DEVICE_H
 #define UNDERWATER_LASER_NET_DEVICE_H
 
@@ -14,7 +16,7 @@
 
 #include "underwater-laser-rate-table.h"
 #include "ns3/mobility-model.h"
-
+#include "ns3/net-device-queue-interface.h"
 
 namespace ns3 {
 
@@ -70,18 +72,26 @@ public:
   virtual bool    IsBridge     (void) const override;
 
   /**
-   * \brief Attach to a channel and the associated models.
+   * \brief Bind channel + loss + error + rate‐table **once**.
    */
-  void Attach (Ptr<UnderwaterLaserChannel> channel,
-               Ptr<UnderwaterLaserPropagationLossModel> lossModel,
-               Ptr<UnderwaterLaserErrorRateModel> errorModel,
-               Ptr<UnderwaterLaserRateTable> rateTable);
+  void SetChannelModels (Ptr<UnderwaterLaserChannel>           channel,
+    Ptr<UnderwaterLaserPropagationLossModel> lossModel,
+    Ptr<UnderwaterLaserErrorRateModel>       errorModel,
+    Ptr<UnderwaterLaserRateTable>            rateTable);
 
+/**
+* \brief (Phy helper only) Attach an ErrorRateModel without touching the rate‐table.
+*/
+  void SetErrorModel (Ptr<UnderwaterLaserErrorRateModel> errorModel);
+
+  Ptr<UnderwaterLaserRateTable> GetRateTable() const;
+
+  void SetQueue (Ptr<Queue<Packet>> txQueue);
   /**
    * \brief Called by the channel to notify that a packet has been received.
    *        We run the error model to see if bits are dropped.
    */
-  void ReceiveFromChannel (Ptr<Packet> packet, double rxSnrDb);
+  void ReceiveFromChannel(Ptr<Packet> packet, double rxSnrDb, Address src, uint16_t protocol);
 
   /**
    * \brief Set the underlying MobilityModel for distance calculations.
@@ -123,6 +133,12 @@ private:
 
   // For queueing/shaping (simplistic).
   DataRate m_currentDataRate;
+
+  // (Optional) keep a reference to NetDeviceQueueInterface, but not used in older ns-3
+  Ptr<NetDeviceQueueInterface> m_queueInterface;
+
+  // A “traditional” pointer to our actual queue of packets, as older CsmaNetDevice did
+  Ptr<Queue<Packet>> m_queue;
 };
 
 } // namespace ns3

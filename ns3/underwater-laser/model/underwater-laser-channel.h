@@ -7,6 +7,8 @@
 #include "ns3/ptr.h"
 #include <vector>
 #include "ns3/net-device.h"
+#include "ns3/data-rate.h"
+
 
 namespace ns3 {
 
@@ -34,11 +36,13 @@ public:
 
   /**
    * \brief Return how many devices are attached to this channel.
+   *        (MUST use uint32_t, per ns-3 base Channel.)
    */
   virtual std::size_t GetNDevices () const override;
 
   /**
    * \brief Get the i-th attached device.
+   *        (MUST use uint32_t, per ns-3 base Channel.)
    */
   virtual Ptr<NetDevice> GetDevice (std::size_t i) const override;
 
@@ -53,6 +57,12 @@ public:
    *        (Can also be set via Attribute "TxPowerDbm".)
    */
   void SetTxPowerDbm (double txPowerDbm);
+
+  /**
+   * \brief Set/Get the minimum data rate (bps) below which links are pruned.
+   */
+  void SetMinRate (DataRate r);
+  DataRate GetMinRate () const;
 
   /**
    * \brief Get the current transmit power in dBm.
@@ -80,7 +90,10 @@ private:
   std::vector< Ptr<NetDevice> >            m_devices;
 
   // New: we allow a configurable Tx power in dBm (defaults to 0 dBm).
-  double                                   m_txPowerDbm;
+  double   m_txPowerDbm;
+
+  // New: a user-settable link‐pruning threshold.
+  DataRate m_minRate;
 };
 
 } // namespace ns3

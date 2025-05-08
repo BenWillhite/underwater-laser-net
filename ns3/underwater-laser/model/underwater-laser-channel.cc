@@ -4,6 +4,8 @@
 #include "underwater-laser-propagation-loss-model.h"
 #include "ns3/double.h"
 #include "ns3/string.h"
+#include "ns3/node.h"
+#include "ns3/data-rate.h"
 #include "ns3/object-factory.h"
 
 #include <iostream> // for std::cout
@@ -25,7 +27,13 @@ UnderwaterLaserChannel::GetTypeId (void)
                    MakeDoubleAccessor (&UnderwaterLaserChannel::SetTxPowerDbm,
                                        &UnderwaterLaserChannel::GetTxPowerDbm),
                    MakeDoubleChecker<double> ())
-  ;
+    .AddAttribute ("MinRate",
+                   "Minimum sustainable data-rate (bps) for a link to be considered alive.",
+                   DataRateValue (DataRate ("0bps")), // default 0 => no pruning
+                   MakeDataRateAccessor (&UnderwaterLaserChannel::SetMinRate,
+                                         &UnderwaterLaserChannel::GetMinRate),
+                   MakeDataRateChecker ()
+                  );
   return tid;
 }
 
@@ -53,6 +61,18 @@ UnderwaterLaserChannel::GetPropagationLossModel () const
 }
 
 void
+UnderwaterLaserChannel::SetMinRate (DataRate r)
+{
+  m_minRate = r;
+}
+
+DataRate
+UnderwaterLaserChannel::GetMinRate () const
+{
+  return m_minRate;
+}
+
+void
 UnderwaterLaserChannel::SetTxPowerDbm (double txPowerDbm)
 {
   m_txPowerDbm = txPowerDbm;
@@ -73,13 +93,14 @@ UnderwaterLaserChannel::AddDevice (Ptr<NetDevice> dev)
 std::size_t
 UnderwaterLaserChannel::GetNDevices () const
 {
-  return m_devices.size();
+  return m_devices.size ();
 }
 
 Ptr<NetDevice>
 UnderwaterLaserChannel::GetDevice (std::size_t i) const
 {
-  return m_devices[i];
+  // (use .at(i) for range-check, or [i] if you prefer no overhead)
+  return m_devices.at (i);
 }
 
 void
@@ -89,30 +110,60 @@ UnderwaterLaserChannel::TransmitStart (Ptr<Packet> packet,
                                        uint16_t protocol,
                                        Ptr<UnderwaterLaserNetDevice> sender)
 {
-  double txPowerDbm = m_txPowerDbm;
-
-  std::cout << "[UnderwaterLaserChannel] TransmitStart; packetSize=" << packet->GetSize ()
-            << " TxPowerDbm=" << txPowerDbm << std::endl;
-
-  // Deliver to all other NetDevices
   for (uint32_t i = 0; i < GetNDevices (); ++i)
     {
-      Ptr<NetDevice> nd = GetDevice (i);
-      Ptr<UnderwaterLaserNetDevice> dev = DynamicCast<UnderwaterLaserNetDevice> (nd);
+      Ptr<UnderwaterLaserNetDevice> dev = DynamicCast<UnderwaterLaserNetDevice>(GetDevice(i));
       if (dev && dev != sender)
         {
-          double rxPowerDbm = txPowerDbm;
-          if (m_lossModel)
+          if (!dev->GetNode ())
             {
-              rxPowerDbm = m_lossModel->CalcRxPower (txPowerDbm,
-                                                     sender->GetMobility (),
-                                                     dev->GetMobility ());
+              std::cout << "[TransmitStart ERROR] Device " << i
+                        << " (pointer=" << dev 
+                        << ") has NULL node pointer.\n";
+              continue; 
             }
 
-          std::cout << "[UnderwaterLaserChannel] Delivering to Dev=" << dev->GetIfIndex()
-                    << " => rxPowerDbm=" << rxPowerDbm << std::endl;
+          if (!dev->GetMobility ())
+            {
+              std::cout << "[TransmitStart ERROR] Device " << i
+                        << " (Node=" << dev->GetNode()->GetId()
+                        << ") has NULL mobility pointer.\n";
+              continue;
+            }
 
-          dev->ReceiveFromChannel (packet->Copy (), rxPowerDbm);
+          // Apply pathloss model
+          double rxPowerDbm = m_lossModel->CalcRxPower (m_txPowerDbm,
+                                                        sender->GetMobility (),
+                                                        dev->GetMobility ());
+          // Check distance‐based link capacity
+          double distance   = dev->GetMobility ()->GetDistanceFrom (sender->GetMobility ());
+          DataRate linkRate = dev->GetRateTable ()->GetMaxRate (distance);  // <-- key fix
+
+          // If link below threshold, skip
+          if (linkRate < m_minRate)
+            {
+              // This neighbor's distance-based data rate is too low → skip
+              continue;
+            }
+
+          double propagationDelaySec = distance / 2.25e8;
+
+          std::cout << "[TransmitStart] Scheduling ReceiveFromChannel on Node " 
+                    << dev->GetNode()->GetId()
+                    << ", Device pointer=" << dev 
+                    << ", distance=" << distance << " m"
+                    << ", linkRate=" << linkRate.GetBitRate() << " bps"
+                    << ", propagationDelay=" << propagationDelaySec << " s\n";
+
+          Simulator::ScheduleWithContext (
+              dev->GetNode ()->GetId (),
+              Seconds (propagationDelaySec),
+              &UnderwaterLaserNetDevice::ReceiveFromChannel,
+              dev,
+              packet->Copy (),
+              rxPowerDbm,
+              sender->GetAddress (),
+              protocol);
         }
     }
 }

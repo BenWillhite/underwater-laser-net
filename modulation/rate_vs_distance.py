@@ -83,7 +83,8 @@ def run_for_bit_rate(args, bit_rate):
         N_th   = (NEP**2 * B) * T_bit / E_ph**2
         N_rin  = RIN * N_ph
         total_noise = N_dark + N_th + N_rin + N_bg
-        snr_db = 10*np.log10((N_det**2)/(total_noise + 1e-20))
+        snr_linear = N_det / np.sqrt(N_det + total_noise)
+        snr_db = 10 * np.log10(snr_linear + 1e-20)
 
         # loop schemes & BER lookup
         for scheme, df_ber in ber_curves.items():

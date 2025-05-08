@@ -5,16 +5,19 @@
 #include "ns3/node.h"
 #include "ns3/simulator.h"
 #include "ns3/pointer.h"
-#include "ns3/mobility-model.h"
-#include "ns3/underwater-laser-channel.h"
 #include "ns3/underwater-laser-net-device.h"
-#include "ns3/underwater-laser-rate-table.h"
+#include "ns3/underwater-laser-channel.h"
 #include "ns3/underwater-laser-propagation-loss-model.h"
+#include "ns3/underwater-laser-rate-table.h"
+#include "ns3/mobility-model.h"
+#include "ns3/drop-tail-queue.h"
+#include "ns3/ipv4-l3-protocol.h"
+#include "ns3/arp-l3-protocol.h"
 #include "ns3/type-id.h"
 #include "ns3/string.h"
 #include "ns3/double.h"
 
-#include <iostream> // for std::cout
+#include <iostream>
 
 namespace ns3 {
 
@@ -28,13 +31,11 @@ UnderwaterLaserHelper::GetTypeId (void)
     .SetParent<Object> ()
     .SetGroupName ("UnderwaterLaser")
     .AddConstructor<UnderwaterLaserHelper> ()
-    // new attribute: path to time+depth CSV
     .AddAttribute ("AlphaCsv",
                    "Path to the alpha_depth_time.csv file (time,z_mid,alpha_m^-1).",
-                   StringValue ("scratch/alpha_depth_time.csv"), // default
+                   StringValue ("scratch/alpha_depth_time.csv"),
                    MakeStringAccessor (&UnderwaterLaserHelper::m_alphaCsv),
                    MakeStringChecker ())
-    // new attribute: beam divergence half-angle
     .AddAttribute ("BeamDivergence",
                    "Beam divergence half-angle in radians",
                    DoubleValue (0.001),
@@ -46,7 +47,7 @@ UnderwaterLaserHelper::GetTypeId (void)
 
 UnderwaterLaserHelper::UnderwaterLaserHelper ()
   : m_channelCreated (false),
-    m_rateTableCsv   ("modulation/rate_vs_distance.csv"),
+    m_rateTableCsv   ("scratch/cleaned_rate_distance.csv"),
     m_alphaCsv       ("scratch/alpha_depth_time.csv"),
     m_divergenceRad  (0.001)
 {
@@ -55,6 +56,7 @@ UnderwaterLaserHelper::UnderwaterLaserHelper ()
 
 UnderwaterLaserHelper::~UnderwaterLaserHelper ()
 {
+  std::cout << "[Destructor] UnderwaterLaserHelper" << std::endl;
   NS_LOG_FUNCTION (this);
 }
 
@@ -85,114 +87,124 @@ UnderwaterLaserHelper::SetRateTableCsv (std::string csvPath)
   m_rateTableCsv = csvPath;
 }
 
-NetDeviceContainer
-UnderwaterLaserHelper::Install (NodeContainer c)
+bool UnderwaterLaserHelper::DeviceReceiveCallback(
+    Ptr<NetDevice> device, 
+    Ptr<const Packet> packet, 
+    uint16_t protocol, 
+    const Address &source)
 {
-  NS_LOG_FUNCTION (this);
+    Ptr<Node> node = device->GetNode();
+    NS_ASSERT(node);
+    
+    std::cout << "[DeviceReceiveCallback] Node ID=" << node->GetId()
+              << " Device=" << device
+              << " Src MAC=" << Mac48Address::ConvertFrom(source)
+              << " Protocol=0x" << std::hex << protocol << std::dec
+              << " Packet size=" << packet->GetSize() << " bytes"
+              << std::endl;
 
-  NetDeviceContainer devices;
+    if (protocol == 0x0806) { // ARP protocol number in hex
+        std::cout << "[ARP PACKET RECEIVED] Node " << node->GetId() << std::endl;
 
-  // 1) Create channel once
-  if (!m_channelCreated)
-    {
-      std::cout << "[UnderwaterLaserHelper] Creating channel..." << std::endl;
-      m_channel = m_channelHelper.Create ();
-
-      // configure our custom propagation-loss model
-      Ptr<UnderwaterLaserPropagationLossModel> loss =
-        m_channel->GetPropagationLossModel ()
-                 ->GetObject<UnderwaterLaserPropagationLossModel> ();
-
-      if (!loss)
-        {
-          std::cerr << "[UnderwaterLaserHelper] ERROR: channel->GetPropagationLossModel() returned null!\n";
-        }
-      else
-        {
-          loss->SetAlphaCsv      (m_alphaCsv);
-          loss->SetBeamDivergence(m_divergenceRad);
+        Ptr<ArpL3Protocol> arp = node->GetObject<ArpL3Protocol>();
+        if (!arp) {
+            std::cout << "[ERROR] Node " << node->GetId() << " ARP pointer is NULL!" << std::endl;
+            return false;
         }
 
-      // Create a shared RateTable
-      m_rateTable = CreateObject<UnderwaterLaserRateTable> ();
-      m_rateTable->Load (m_rateTableCsv);
+        arp->Receive(device, packet, protocol, source, device->GetAddress(), NetDevice::PACKET_HOST);
+        std::cout << "[ARP HANDLER CALLED] Node " << node->GetId() << std::endl;
+    }
+    else if (protocol == 0x0800) { // IPv4 protocol number
+        Ptr<Ipv4L3Protocol> ipv4 = node->GetObject<Ipv4L3Protocol>();
+        if (!ipv4) {
+            std::cout << "[ERROR] Node " << node->GetId() << " IPv4 pointer is NULL!" << std::endl;
+            return false;
+        }
 
-      m_channelCreated = true;
-      std::cout << "[UnderwaterLaserHelper] Channel + LossModel + RateTable created.\n";
+        ipv4->Receive(device, packet, protocol, source, device->GetAddress(), NetDevice::PACKET_HOST);
+        std::cout << "[IPv4 HANDLER CALLED] Node " << node->GetId() << std::endl;
+    }
+    else {
+        std::cout << "[UNKNOWN PROTOCOL] Node " << node->GetId()
+                  << " protocol=" << protocol << std::endl;
+        return false;
     }
 
-  // 2) For each node, create an UnderwaterLaserNetDevice
-  uint32_t nodeIndex = 0;
-  for (auto it = c.Begin (); it != c.End (); ++it, ++nodeIndex)
-    {
-      Ptr<Node> node = *it;
-      if (!node)
-        {
-          std::cerr << "[UnderwaterLaserHelper] ERROR: NodeContainer had a null node at index=" << nodeIndex << std::endl;
-          continue;
-        }
+    return true; 
+}
 
-      // create device
-      Ptr<UnderwaterLaserNetDevice> device = CreateObject<UnderwaterLaserNetDevice> ();
-      std::cout << "[UnderwaterLaserHelper] Created device=" << device
-                << " for node=" << node->GetId() << std::endl;
 
-      // Add the device to the node
-      node->AddDevice (device);
 
-      // Make sure the device knows which Node it belongs to:
-      device->SetNode (node);
 
-      // Double-check #devices
-      uint32_t nDev = node->GetNDevices ();
-      std::cout << "  => Node=" << node->GetId()
-                << " now has #devices=" << nDev
-                << " (just added underwater-laser-net-device)\n";
+NetDeviceContainer
+UnderwaterLaserHelper::InstallPair (Ptr<Node> nA, Ptr<Node> nB)
+{
+  // 1) Create a fresh channel + loss model
+  Ptr<UnderwaterLaserChannel> channel = m_channelHelper.Create ();
+  auto lossModel = channel->GetPropagationLossModel()
+                      ->GetObject<UnderwaterLaserPropagationLossModel> ();
+  lossModel->SetAlphaCsv      (m_alphaCsv);
+  lossModel->SetBeamDivergence(m_divergenceRad);
 
-      // set IfIndex
-      device->SetIfIndex (nDev - 1);
+  // 2) Prepare a rate table + error model
+  Ptr<UnderwaterLaserRateTable> rateTable = CreateObject<UnderwaterLaserRateTable>();
+  rateTable->Load(m_rateTableCsv);
+  Ptr<UnderwaterLaserErrorRateModel> errModel = CreateObject<UnderwaterLaserErrorRateModel>();
+  errModel->SetTraceFilename("scratch/per_snr_table.csv");
 
-      // attach channel, no error-model yet, reference the shared rate table
-      if (!m_channel)
-        {
-          std::cerr << "[UnderwaterLaserHelper] ERROR: m_channel is null!\n";
-        }
-      else
-        {
-          auto lossModel = m_channel->GetPropagationLossModel ()
-                                ->GetObject<UnderwaterLaserPropagationLossModel>();
-          device->Attach (m_channel, lossModel, 0, m_rateTable);
-        }
+  // 3) Create & wire device on node A
+  Ptr<UnderwaterLaserNetDevice> devA = CreateObject<UnderwaterLaserNetDevice>();
+  nA->AddDevice(devA);
+  devA->SetNode(nA);
+  devA->SetIfIndex(nA->GetNDevices()-1);
+  devA->SetChannelModels(channel,
+                         lossModel,
+                         errModel,
+                         rateTable);
+  channel->AddDevice(devA);
+  devA->SetMobility(nA->GetObject<MobilityModel>());
+  m_macHelper.CreateMac(devA);
+  m_phyHelper.CreatePhy(devA);
+  devA->SetAddress(Mac48Address::Allocate());
+  devA->SetQueue(CreateObject<DropTailQueue<Packet>>());
+  // Register IP & ARP on devA
+  nA->RegisterProtocolHandler(MakeCallback(&Ipv4L3Protocol::Receive,
+                                           nA->GetObject<Ipv4L3Protocol>()),
+                              Ipv4L3Protocol::PROT_NUMBER, devA);
+  nA->RegisterProtocolHandler(MakeCallback(&ArpL3Protocol::Receive,
+                                           nA->GetObject<ArpL3Protocol>()),
+                              ArpL3Protocol::PROT_NUMBER, devA);
+  devA->SetReceiveCallback(MakeCallback(&UnderwaterLaserHelper::DeviceReceiveCallback, this));
 
-      // mobility => device
-      Ptr<MobilityModel> mob = node->GetObject<MobilityModel> ();
-      if (!mob)
-        {
-          std::cout << "[DEBUG] Node=" << node->GetId()
-                    << " has NO MobilityModel?\n";
-        }
-      else
-        {
-          std::cout << "[DEBUG] Node=" << node->GetId()
-                    << " has MobilityModel: " << mob->GetInstanceTypeId().GetName() << "\n";
-          device->SetMobility (mob);
-        }
+  // 4) Repeat for node B
+  Ptr<UnderwaterLaserNetDevice> devB = CreateObject<UnderwaterLaserNetDevice>();
+  nB->AddDevice(devB);
+  devB->SetNode(nB);
+  devB->SetIfIndex(nB->GetNDevices()-1);
+  devB->SetChannelModels(channel,
+                         lossModel,
+                         errModel,
+                         rateTable);
+  channel->AddDevice(devB);
+  devB->SetMobility(nB->GetObject<MobilityModel>());
+  m_macHelper.CreateMac(devB);
+  m_phyHelper.CreatePhy(devB);
+  devB->SetAddress(Mac48Address::Allocate());
+  devB->SetQueue(CreateObject<DropTailQueue<Packet>>());
+  nB->RegisterProtocolHandler(MakeCallback(&Ipv4L3Protocol::Receive,
+                                           nB->GetObject<Ipv4L3Protocol>()),
+                              Ipv4L3Protocol::PROT_NUMBER, devB);
+  nB->RegisterProtocolHandler(MakeCallback(&ArpL3Protocol::Receive,
+                                           nB->GetObject<ArpL3Protocol>()),
+                              ArpL3Protocol::PROT_NUMBER, devB);
+  devB->SetReceiveCallback(MakeCallback(&UnderwaterLaserHelper::DeviceReceiveCallback, this));
 
-      // MAC & PHY
-      std::cout << "[UnderwaterLaserHelper] Creating MAC+PHY for device\n";
-      m_macHelper.CreateMac (device);
-      m_phyHelper.CreatePhy (device);
-
-      // allocate a MAC address
-      Mac48Address addr = Mac48Address::Allocate ();
-      device->SetAddress (addr);
-      std::cout << "  => Assigned MAC=" << addr << " to device=" << device << std::endl;
-
-      devices.Add (device);
-    } // end loop over nodes
-
-  std::cout << "[UnderwaterLaserHelper] Install() returning " << devices.GetN() << " devices total.\n";
-  return devices;
+  // 5) Return the two new devices
+  NetDeviceContainer linkDevs;
+  linkDevs.Add(devA);
+  linkDevs.Add(devB);
+  return linkDevs;
 }
 
 } // namespace ns3

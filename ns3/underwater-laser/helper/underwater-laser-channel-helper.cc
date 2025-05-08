@@ -44,17 +44,21 @@ UnderwaterLaserChannelHelper::SetAttribute (std::string name, const AttributeVal
 Ptr<UnderwaterLaserChannel>
 UnderwaterLaserChannelHelper::Create ()
 {
-  NS_LOG_FUNCTION (this);
-  Ptr<UnderwaterLaserChannel> channel = m_channelFactory.Create<UnderwaterLaserChannel> ();
+    NS_LOG_FUNCTION (this);
+    Ptr<UnderwaterLaserChannel> channel = m_channelFactory.Create<UnderwaterLaserChannel> ();
+    NS_ASSERT(channel);
 
-  // create the propagation loss model
-  Ptr<UnderwaterLaserPropagationLossModel> lossModel =
-    m_lossModelFactory.Create<UnderwaterLaserPropagationLossModel> ();
+    Ptr<UnderwaterLaserPropagationLossModel> lossModel =
+        m_lossModelFactory.Create<UnderwaterLaserPropagationLossModel> ();
+    NS_ASSERT(lossModel);
 
-  // associate them
-  channel->SetPropagationLossModel (lossModel);
+    channel->SetPropagationLossModel (lossModel);
 
-  return channel;
+    std::cout << "[ChannelHelper::Create] Channel created=" << channel
+              << " LossModel=" << lossModel << std::endl;
+
+    return channel;
 }
+
 
 } // namespace ns3

@@ -40,18 +40,19 @@ UnderwaterLaserPropagationLossModel::UnderwaterLaserPropagationLossModel ()
   : m_divergenceRad (0.001),
     m_w0 (0.001)
 {
-  std::cout << "[UWL-PropModel] Constructor" << std::endl;
+  //std::cout << "[UWL-PropModel] Constructor" << std::endl;
 }
 
 UnderwaterLaserPropagationLossModel::~UnderwaterLaserPropagationLossModel ()
 {
-  std::cout << "[UWL-PropModel] Destructor" << std::endl;
+  //std::cout << "[UWL-PropModel] Destructor" << std::endl;
 }
 
 void
 UnderwaterLaserPropagationLossModel::SetAlphaCsv (const std::string &alphaCsv)
 {
-  std::cout << "[UWL-PropModel] SetAlphaCsv: " << alphaCsv << std::endl;
+    //std::cout << "[PropagationLossModel] Loading Alpha CSV file=" << alphaCsv << std::endl;
+    //std::cout << "[UWL-PropModel] SetAlphaCsv: " << alphaCsv << std::endl;
   m_alphaCsvFilename = alphaCsv;
   m_alphaTable2D.clear ();
 

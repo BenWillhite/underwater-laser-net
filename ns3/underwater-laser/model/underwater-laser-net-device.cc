@@ -5,10 +5,13 @@
 #include "ns3/names.h"
 #include "ns3/simulator.h"
 #include "ns3/packet.h"
+#include "ns3/net-device-queue-interface.h"
+#include "ns3/drop-tail-queue.h"
 #include "ns3/ipv4-address.h"
 #include "ns3/address-utils.h"
 #include "ns3/mobility-model.h"
 #include "underwater-laser-channel.h"
+#include "underwater-laser-rate-table.h"
 #include "underwater-laser-propagation-loss-model.h"
 #include "underwater-laser-error-rate-model.h"
 
@@ -23,7 +26,7 @@ UnderwaterLaserNetDevice::GetTypeId (void)
 {
   static TypeId tid = TypeId ("ns3::UnderwaterLaserNetDevice")
     .SetParent<NetDevice> ()
-    .SetGroupName ("PointToPoint")
+    .SetGroupName ("UnderwaterLaser")
     .AddConstructor<UnderwaterLaserNetDevice> ();
   return tid;
 }
@@ -41,11 +44,25 @@ UnderwaterLaserNetDevice::UnderwaterLaserNetDevice ()
     m_currentDataRate (DataRate (1e6)) // default 1 Mbps
 {
   std::cout << "[UnderwaterLaserNetDevice] Constructor" << std::endl;
+
+  // (1) Optionally create a placeholder NetDeviceQueueInterface aggregator.
+  // In older ns-3, we won't do CreateTxQueues() or SetQueue() because they don't exist.
+  m_queueInterface = CreateObject<NetDeviceQueueInterface> ();
+  this->AggregateObject (m_queueInterface);
+
+  // (2) Create our own internal queue for actual packet storage
+  m_queue = CreateObject<DropTailQueue<Packet>> ();
+}
+
+void
+UnderwaterLaserNetDevice::SetQueue (Ptr<Queue<Packet>> txQueue)
+{
+    m_queue = txQueue;
 }
 
 UnderwaterLaserNetDevice::~UnderwaterLaserNetDevice ()
 {
-  std::cout << "[UnderwaterLaserNetDevice] Destructor" << std::endl;
+    std::cout << "[Destructor] UnderwaterLaserNetDevice at node " << (m_node ? m_node->GetId() : -1) << std::endl;
 }
 
 void
@@ -69,6 +86,11 @@ UnderwaterLaserNetDevice::GetChannel () const
 void
 UnderwaterLaserNetDevice::SetAddress (Address address)
 {
+  Mac48Address mac = Mac48Address::ConvertFrom (address);
+  std::cout << "[UWLNetDevice::SetAddress] this=" << this
+            << " node=" << (m_node ? m_node->GetId() : -1)
+            << " old=" << m_address
+            << " new=" << mac << std::endl;
   m_address = Mac48Address::ConvertFrom (address);
 }
 
@@ -82,7 +104,7 @@ UnderwaterLaserNetDevice::GetAddress () const
 bool
 UnderwaterLaserNetDevice::IsBroadcast () const
 {
-  // Return true so IP can send broadcast (e.g. OLSR Hellos, ARP).
+  // Return true so IP can do broadcast frames if needed.
   return true;
 }
 
@@ -101,34 +123,30 @@ UnderwaterLaserNetDevice::IsMulticast () const
 Address
 UnderwaterLaserNetDevice::GetMulticast (Ipv4Address addr) const
 {
-  // Just map IPv4 multicast to an Ethernet-like address if needed
-  return Mac48Address ("33:33:00:00:00:00");
+  return Mac48Address::GetMulticast(addr);
 }
 
 Address
 UnderwaterLaserNetDevice::GetMulticast (Ipv6Address addr) const
 {
-  // Same placeholder
-  return Mac48Address ("33:33:00:00:00:00");
+  return Mac48Address::GetMulticast(addr);
 }
 
-/* If you want a multi-access link for OLSR, set this to false so IP 
-   sees it as broadcast-capable. If you prefer a strict p2p design, 
-   set IsPointToPoint()=true but then also handle broadcast carefully. */
+/* If you want multi-access for OLSR, set IsPointToPoint()=false. */
 bool
 UnderwaterLaserNetDevice::IsPointToPoint () const
 {
   return false;
 }
 
-/* If you want no ARP overhead, return false. If you want ARP, return true. */
+/* Return true if we need ARP for IPv4. */
 bool
 UnderwaterLaserNetDevice::NeedsArp () const
 {
-  return false;
+  return true;
 }
 
-/* We assume the link is always up in this simple design. */
+/* Assume link is always up. */
 bool
 UnderwaterLaserNetDevice::IsLinkUp () const
 {
@@ -148,51 +166,63 @@ UnderwaterLaserNetDevice::IsBridge () const
 }
 
 bool
-UnderwaterLaserNetDevice::Send (Ptr<Packet> packet, const Address &dest, uint16_t protocolNumber)
+UnderwaterLaserNetDevice::Send (Ptr<Packet> packet,
+                                const Address &dest,
+                                uint16_t protocolNumber)
 {
   return DoSend (packet, GetAddress (), dest, protocolNumber);
 }
 
 bool
-UnderwaterLaserNetDevice::SendFrom (Ptr<Packet> packet, const Address &source,
-                                    const Address &dest, uint16_t protocolNumber)
+UnderwaterLaserNetDevice::SendFrom (Ptr<Packet> packet,
+                                    const Address &source,
+                                    const Address &dest,
+                                    uint16_t protocolNumber)
 {
   return DoSend (packet, source, dest, protocolNumber);
 }
 
-bool
-UnderwaterLaserNetDevice::DoSend (Ptr<Packet> packet,
-                                  const Address &src,
-                                  const Address &dst,
-                                  uint16_t protocol)
+bool UnderwaterLaserNetDevice::DoSend (Ptr<Packet> packet,
+                                       const Address &src,
+                                       const Address &dst,
+                                       uint16_t protocol)
 {
-  // Debug check for pointers
-  if (!m_mobility || !m_rateTable || !m_channel)
+    if (!m_mobility || !m_rateTable || !m_channel)
     {
-      std::cout << "[UnderwaterLaserNetDevice::DoSend DEBUG] "
-                << "m_mobility=" << m_mobility
-                << " m_rateTable=" << m_rateTable
-                << " m_channel="   << m_channel
-                << " => FAIL\n";
-      return false;
+        std::cout << "[DoSend ERROR] missing components: "
+                  << "m_mobility=" << m_mobility << ", "
+                  << "m_rateTable=" << m_rateTable << ", "
+                  << "m_channel=" << m_channel << std::endl;
+        return false;
     }
 
-  DataRate dr = GetCurrentDataRate ();
-  Time serialization = Seconds (packet->GetSize () * 8.0 / dr.GetBitRate ());
+    DataRate dr = GetCurrentDataRate ();
+    Time serialization = Seconds (packet->GetSize () * 8.0 / dr.GetBitRate ());
+        //std::cout << "[DoSend] Node=" << m_node->GetId()
+        //          << " Position: x=" << pos.x << ", y=" << pos.y << ", z=" << pos.z << std::endl;
 
-  std::cout << "[UnderwaterLaserNetDevice] Queueing packet size=" << packet->GetSize ()
-            << " bytes, dataRate=" << dr.GetBitRate()
-            << " => TxTime=" << serialization.GetSeconds() << "s" << std::endl;
+    //std::cout << "[DoSend] Node=" << m_node->GetId()
+      //        << ", Sending packet, Protocol=" << protocol
+      //        << ", from MAC=" << Mac48Address::ConvertFrom(src)
+      //        << ", to MAC=" << Mac48Address::ConvertFrom(dst)
+      //        << ", Size=" << packet->GetSize()
+      //        << ", Serialization Time=" << serialization.GetSeconds() << "s"
+      //        << std::endl;
 
-  Simulator::Schedule (serialization, &UnderwaterLaserChannel::TransmitStart,
-                       m_channel, packet, src, dst, protocol, this);
+    Simulator::Schedule (serialization,
+                         &UnderwaterLaserChannel::TransmitStart,
+                         m_channel, packet, src, dst, protocol, this);
 
-  return true;
+    return true;
 }
+
 
 DataRate
 UnderwaterLaserNetDevice::GetCurrentDataRate () const
 {
+    if (m_channel->GetNDevices() <= 1) {
+        std::cout << "[ERROR] Channel has only 1 device connected, no other nodes reachable!" << std::endl;
+    }    
   if (!m_rateTable || !m_mobility)
     {
       return m_currentDataRate;
@@ -201,7 +231,9 @@ UnderwaterLaserNetDevice::GetCurrentDataRate () const
   double maxDist = 0.0;
   for (uint32_t i = 0; i < m_channel->GetNDevices (); ++i)
     {
-      Ptr<UnderwaterLaserNetDevice> dev = DynamicCast<UnderwaterLaserNetDevice> (m_channel->GetDevice (i));
+      Ptr<UnderwaterLaserNetDevice> dev =
+        DynamicCast<UnderwaterLaserNetDevice> (m_channel->GetDevice (i));
+
       if (dev && dev != GetObject<UnderwaterLaserNetDevice> ())
         {
           double dist = CalculateDistance (m_mobility->GetPosition (),
@@ -217,7 +249,7 @@ UnderwaterLaserNetDevice::GetCurrentDataRate () const
   return DataRate (rateBps);
 }
 
-/* -------------- New: Mtu methods that the linker was complaining about -------------- */
+/* -------------- Mtu methods to satisfy the linker -------------- */
 bool
 UnderwaterLaserNetDevice::SetMtu (const uint16_t mtu)
 {
@@ -230,7 +262,7 @@ UnderwaterLaserNetDevice::GetMtu () const
 {
   return m_mtu;
 }
-/* -------------------------------------------------------------------------- */
+/* --------------------------------------------------------------- */
 
 Ptr<Node>
 UnderwaterLaserNetDevice::GetNode () const
@@ -262,49 +294,70 @@ UnderwaterLaserNetDevice::SupportsSendFrom () const
   return true;
 }
 
-void
-UnderwaterLaserNetDevice::Attach (Ptr<UnderwaterLaserChannel> channel,
-                                  Ptr<UnderwaterLaserPropagationLossModel> lossModel,
-                                  Ptr<UnderwaterLaserErrorRateModel> errorModel,
-                                  Ptr<UnderwaterLaserRateTable> rateTable)
+// — after:
+void UnderwaterLaserNetDevice::SetChannelModels (
+    Ptr<UnderwaterLaserChannel> channel,
+    Ptr<UnderwaterLaserPropagationLossModel> lossModel,
+    Ptr<UnderwaterLaserErrorRateModel> errorModel,
+    Ptr<UnderwaterLaserRateTable> rateTable)
 {
-  m_channel    = channel;
-  m_lossModel  = lossModel;
+    NS_ASSERT(channel && lossModel && errorModel && rateTable);
+    m_channel    = channel;
+    m_lossModel  = lossModel;
+    m_errorModel = errorModel;
+    m_rateTable  = rateTable;
+}
+
+
+void
+UnderwaterLaserNetDevice::SetErrorModel (Ptr<UnderwaterLaserErrorRateModel> errorModel)
+{
   m_errorModel = errorModel;
-  m_rateTable  = rateTable;
 }
 
-void
-UnderwaterLaserNetDevice::ReceiveFromChannel (Ptr<Packet> packet, double rxSnrDb)
+void UnderwaterLaserNetDevice::ReceiveFromChannel(Ptr<Packet> packet, 
+    double rxSnrDb, 
+    Address src, 
+    uint16_t protocol)
 {
-  std::cout << "[UnderwaterLaserNetDevice] ReceiveFromChannel: rxSnrDb=" << rxSnrDb
-            << " packetSize=" << packet->GetSize() << std::endl;
-
-  uint64_t nbits = packet->GetSize () * 8;
-  double chunkSuccess = 1.0;
-  if (m_errorModel)
-    {
-      chunkSuccess = m_errorModel->DoGetChunkSuccessRate (rxSnrDb, nbits);
+    if (!m_node || !m_errorModel) {
+        std::cout << "[ReceiveFromChannel ERROR] Node or error model pointer is NULL.\n";
+        return;
     }
 
-  double r = (double) std::rand () / (double) RAND_MAX;
-  if (r > chunkSuccess)
-    {
-      std::cout << "[UnderwaterLaserNetDevice] Packet dropped by PER model at SNR="
-                << rxSnrDb << " dB" << std::endl;
-      return;
+    uint64_t nbits = packet->GetSize() * 8;
+    double chunkSuccess = m_errorModel->DoGetChunkSuccessRate(rxSnrDb, nbits);
+    double r = (double) std::rand() / RAND_MAX;
+
+    std::cout << "[ReceiveFromChannel] Node=" << m_node->GetId()
+              << ", Device=" << this
+              << ", SNR=" << rxSnrDb
+              << ", ChunkSuccess=" << chunkSuccess
+              << ", Rand=" << r
+              << ", Protocol=" << protocol
+              << ", PacketSize=" << packet->GetSize() << std::endl;
+
+    std::cout << "    My Mac48=" << m_address << std::endl;
+
+    if (r > chunkSuccess) {
+        std::cout << "[ReceiveFromChannel] Packet dropped due to error model." << std::endl;
+        return;
     }
 
-  // If not dropped, pass upward
-  if (!m_rxCallback.IsNull ())
-    {
-      m_rxCallback (this, packet, 0, Address ());
-    }
-  if (!m_promiscCallback.IsNull ())
-    {
-      m_promiscCallback (this, packet, 0, Address (), Address (), PacketType::PACKET_HOST);
+    if (!m_rxCallback.IsNull()) {
+        std::cout << "[ReceiveFromChannel] Calling ReceiveCallback for node=" << m_node->GetId() << std::endl;
+        m_rxCallback(this, packet, protocol, src);
+    } else {
+        std::cout << "[ReceiveFromChannel WARNING] ReceiveCallback is NULL for node=" << m_node->GetId() << std::endl;
     }
 }
+
+
+Ptr<UnderwaterLaserRateTable>
+UnderwaterLaserNetDevice::GetRateTable() const
+ {
+    return m_rateTable;
+ }
 
 void
 UnderwaterLaserNetDevice::SetMobility (Ptr<MobilityModel> mobility)

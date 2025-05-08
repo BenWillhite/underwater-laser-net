@@ -47,7 +47,6 @@ UnderwaterLaserPhyHelper::CreatePhy (Ptr<UnderwaterLaserNetDevice> device)
   Ptr<UnderwaterLaserPropagationLossModel> loss = channel->GetPropagationLossModel ();
 
   // 3) attach to the device
-  device->Attach (channel, loss, errorModel, 0);
-}
-
+  device->SetErrorModel (errorModel);
+  }
 } // namespace ns3

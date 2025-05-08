@@ -168,14 +168,23 @@ python meep/src/run_sweep_lambda.py \
 cd modulation
 python rate_vs_distance.py \
   --csv_dir ../meep/data \
-  --P_TX_mW 10 \
+  --P_TX_mW 20 \
   --eta_rx 0.5 \
   --params ../meep/channel_params.json \
   --ber_dir ber_curves
 
 # 6) NS‑3 emulation
-cd ../ns3
-./waf --run scratch/laser_mesh --command-template="%s --nodeSpacing=50 --attachErrorModel=true --simTime=30"
+# from ns-3 root
+rm -rf build                # start from a clean slate
+mkdir build && cd build
+
+cmake .. \
+  -DENABLE_ECMP=ON \
+  -DCMAKE_BUILD_TYPE=Debug
+
+cmake --build . -- -j12
+for csvs to properly pick up, you must run from the ns-3 root directory, since file paths are relatively placed from ns-3/ directory
+
 ```
 
 **All components now reflect a data‑driven, physics‑based link‑budget methodology, seamlessly chaining CFD → Meep → Photon‑budget → NS‑3 network emulation.**
