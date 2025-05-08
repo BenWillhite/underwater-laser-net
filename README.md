@@ -57,6 +57,9 @@ Optional
 Docker image (see docs/docker.md)
 Jupyter for meep/notebooks
 
+IMPORTANT NOTE:
+Files in the ns3 folder should be placed INTO ns-3 on your local machine, NOT RAN in the project directory. ns3/underwater-laser and its contents should be placed as a new directory in ns-3/src on your local machine. 
+
 Quick Start
 
 CFD → α(z,t)
