@@ -45,10 +45,10 @@ main (int argc, char *argv[])
   LogComponentEnable ("ArpL3Protocol",            LOG_LEVEL_ALL);
   LogComponentEnable ("UnderwaterLaserRateTable", LOG_LEVEL_ALL);
 
-  double nodeSpacing      = 20.0;
+  double nodeSpacing      = 10.0;
   bool   attachErrorModel = true;
   double simTime          = 30.0;
-  double txDbm            = 20.0;
+  double txDbm            = 30.0;
 
   CommandLine cmd;
   cmd.AddValue ("nodeSpacing",      "Grid spacing (m)",            nodeSpacing);
@@ -63,17 +63,27 @@ main (int argc, char *argv[])
   const std::string rateTableCsv = "scratch/cleaned_rate_vs_distance.csv";
 
   // --- 2) Check CSV presence
-  NS_LOG_INFO ("Verifying CSV file presence...");
-  if (!std::filesystem::exists (alphaCsv) ||
-      (attachErrorModel && !std::filesystem::exists (perSnrCsv)) ||
-      !std::filesystem::exists (rateTableCsv))
-    {
-      std::cerr << "ERROR: Missing CSV files\n"
-                << "  " << alphaCsv << "\n"
-                << "  " << perSnrCsv << "\n"
-                << "  " << rateTableCsv << std::endl;
-      return 1;
-    }
+    // --- 2) Check required CSV presence (static rate table is now optional)
+    NS_LOG_INFO ("Verifying CSV file presence...");
+    if (!std::filesystem::exists (alphaCsv))
+      {
+        std::cerr << "ERROR: Missing extinction‐vs‐time CSV: "
+                  << alphaCsv << std::endl;
+        return 1;
+      }
+    if (attachErrorModel && !std::filesystem::exists (perSnrCsv))
+      {
+        std::cerr << "ERROR: Missing PER-vs-SNR CSV: "
+                  << perSnrCsv << std::endl;
+        return 1;
+      }
+    if (!std::filesystem::exists (rateTableCsv))
+      {
+        NS_LOG_WARN ("Static rate-vs-distance CSV not found: "
+                     << rateTableCsv
+                     << ".  Continuing under ML-predictor fallback.");
+      }
+  
 
   // --- 3) Create & position nodes in 3×3 grid
   NodeContainer nodes;
@@ -101,7 +111,7 @@ main (int argc, char *argv[])
     }
   laser->SetRateTableCsv (rateTableCsv);
   laser->SetChannelAttribute ("TxPowerDbm", DoubleValue (txDbm));
-  laser->SetChannelAttribute ("MinRate", DataRateValue (DataRate ("100Mbps")));
+  laser->SetChannelAttribute ("MinRate", DataRateValue (DataRate ("0.001Mbps")));
 
   // --- 5) Install Internet stack with AODV routing
   AodvHelper            aodv;

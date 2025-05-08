@@ -17,8 +17,7 @@ MlLinkMetric::GetTypeId ()
 double
 MlLinkMetric::PredictCost (Ptr<Node> a, Ptr<Node> b) const
 {
-  // TODO: hook in your real ML model
-  return 1.0; // uniform cost for now
+  return 1.0;
 }
 
 } // namespace ns3

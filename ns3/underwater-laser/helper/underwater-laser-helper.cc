@@ -41,7 +41,11 @@ UnderwaterLaserHelper::GetTypeId (void)
                    DoubleValue (0.001),
                    MakeDoubleAccessor (&UnderwaterLaserHelper::m_divergenceRad),
                    MakeDoubleChecker<double> ())
-  ;
+    .AddAttribute ("FluxPredictorScript",
+                  "Path to the Python flux-predictor wrapper",
+                  StringValue ("scratch/python/flux_predictor.py"), // default
+                  MakeStringAccessor (&UnderwaterLaserHelper::m_fluxPredictorScript),
+                  MakeStringChecker ());
   return tid;
 }
 
@@ -49,7 +53,8 @@ UnderwaterLaserHelper::UnderwaterLaserHelper ()
   : m_channelCreated (false),
     m_rateTableCsv   ("scratch/cleaned_rate_distance.csv"),
     m_alphaCsv       ("scratch/alpha_depth_time.csv"),
-    m_divergenceRad  (0.001)
+    m_divergenceRad  (0.001),
+    m_fluxPredictorScript("scratch/python/flux_predictor.py") // NEW
 {
   NS_LOG_FUNCTION (this);
 }
@@ -147,13 +152,36 @@ UnderwaterLaserHelper::InstallPair (Ptr<Node> nA, Ptr<Node> nB)
   lossModel->SetAlphaCsv      (m_alphaCsv);
   lossModel->SetBeamDivergence(m_divergenceRad);
 
-  // 2) Prepare a rate table + error model
+  // 2a) Figure out distance
+  double linkDistance = nA->GetObject<MobilityModel>()->GetDistanceFrom(nB->GetObject<MobilityModel>());
+
+  // 2b) Call flux_predictor.py
+  std::ostringstream outCsvPath;
+  outCsvPath << "/tmp/flux_" << nA->GetId() << "_" << nB->GetId() << ".csv";
+
+  std::ostringstream cmd;
+  cmd << "python3 "
+      << m_fluxPredictorScript
+      << " --alpha_csv " << m_alphaCsv
+      << " --distance "  << linkDistance
+      << " --lambda_nm 532 "
+      << " --out_csv "   << outCsvPath.str();
+
+  int ret = std::system(cmd.str().c_str());
+  if (ret != 0)
+  {
+    NS_FATAL_ERROR("Flux predictor script failed, ret=" << ret);
+  }
+
+  // 2c) Now load that new CSV
   Ptr<UnderwaterLaserRateTable> rateTable = CreateObject<UnderwaterLaserRateTable>();
-  rateTable->Load(m_rateTableCsv);
+  rateTable->Load(outCsvPath.str());
+
+  // 2d) Prepare an error model
   Ptr<UnderwaterLaserErrorRateModel> errModel = CreateObject<UnderwaterLaserErrorRateModel>();
   errModel->SetTraceFilename("scratch/per_snr_table.csv");
 
-  // 3) Create & wire device on node A
+  // 3) Create & wire device on node A, hooking in the new rateTable
   Ptr<UnderwaterLaserNetDevice> devA = CreateObject<UnderwaterLaserNetDevice>();
   nA->AddDevice(devA);
   devA->SetNode(nA);
@@ -177,7 +205,7 @@ UnderwaterLaserHelper::InstallPair (Ptr<Node> nA, Ptr<Node> nB)
                               ArpL3Protocol::PROT_NUMBER, devA);
   devA->SetReceiveCallback(MakeCallback(&UnderwaterLaserHelper::DeviceReceiveCallback, this));
 
-  // 4) Repeat for node B
+  // 4) Repeat for node B (basically the same lines)...
   Ptr<UnderwaterLaserNetDevice> devB = CreateObject<UnderwaterLaserNetDevice>();
   nB->AddDevice(devB);
   devB->SetNode(nB);
@@ -192,6 +220,7 @@ UnderwaterLaserHelper::InstallPair (Ptr<Node> nA, Ptr<Node> nB)
   m_phyHelper.CreatePhy(devB);
   devB->SetAddress(Mac48Address::Allocate());
   devB->SetQueue(CreateObject<DropTailQueue<Packet>>());
+  // Register IP & ARP on devB
   nB->RegisterProtocolHandler(MakeCallback(&Ipv4L3Protocol::Receive,
                                            nB->GetObject<Ipv4L3Protocol>()),
                               Ipv4L3Protocol::PROT_NUMBER, devB);
@@ -206,5 +235,6 @@ UnderwaterLaserHelper::InstallPair (Ptr<Node> nA, Ptr<Node> nB)
   linkDevs.Add(devB);
   return linkDevs;
 }
+
 
 } // namespace ns3

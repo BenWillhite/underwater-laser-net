@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project(ns3-scratch)
 
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+include_directories(${Python3_INCLUDE_DIRS})
+
 # Allow including headers from this directory
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 

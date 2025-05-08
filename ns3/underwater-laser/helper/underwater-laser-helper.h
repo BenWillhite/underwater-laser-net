@@ -73,6 +73,9 @@ private:
   std::string                   m_alphaCsv;
   double                        m_divergenceRad;
 
+    // NEW: path to the flux predictor script
+    std::string                   m_fluxPredictorScript;
+
   bool DeviceReceiveCallback(
     Ptr<NetDevice> device, 
     Ptr<const Packet> packet, 
